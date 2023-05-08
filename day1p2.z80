@@ -1,7 +1,4 @@
 ; Note: Need an extra blank line at the end of the file
-; For _DispHL:
-; https://stackoverflow.com/questions/53218749/how-to-display-the-value-of-the-a-register-in-ti-assembly-for-ti-83-ti-84-ti-84,
-; Not documented on wikiti, putting here: destroys AF, DE and HL
 #include    "ti83plus.inc"
 #define     progStart   $9D95
 #define mov32(dst, src) ld HL, (src) \ LD (dst), HL \ LD HL, (src + 2) \ LD (dst + 2), HL
