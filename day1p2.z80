@@ -1,0 +1,315 @@
+; Note: Need an extra blank line at the end of the file
+; For _DispHL:
+; https://stackoverflow.com/questions/53218749/how-to-display-the-value-of-the-a-register-in-ti-assembly-for-ti-83-ti-84-ti-84,
+; Not documented on wikiti, putting here: destroys AF, DE and HL
+#include    "ti83plus.inc"
+#define     progStart   $9D95
+#define mov32(dst, src) ld HL, (src) \ LD (dst), HL \ LD HL, (src + 2) \ LD (dst + 2), HL
+
+.org        progStart-2
+.db         $BB,$6D
+; Proc: main
+    ; Look up Str1                            ;
+    LD HL, _constStr1Tok                      ;
+    bcall(_Mov9ToOP1)                         ;
+    bcall(_FindSym)                           ; DE = findSym(Str1)
+    ; Print errors if not found               ;
+    JP C, _eSymNotFound                       ;
+    LD A, B                                   ;
+    AND A                                     ;
+    JP NZ, _eSymNotInRam                      ;
+    ; Get size of file                        ;
+    LD A, (DE)                                ;
+    INC DE                                    ;
+    LD L, A                                   ;
+    LD A, (DE)                                ;
+    INC DE                                    ;
+    LD H, A                                   ; FileSize = *(uint16_t *)DE
+    ADD HL, DE                                ; DE += 2
+    LD (_varFileEnd), HL                      ; FileEnd = DE + FileSize
+                                              ;
+_outerLoopStart:                              ; while (true) {
+    LD HL, 0                                  ;
+    LD (_varCurNum), HL                       ;
+    LD (_varCurNum + 2), HL     ;   curNum = 0;
+_innerLoopStart:                              ;   while (true) { // HL != 0
+            CALL Proc_ReadLine                ;     HL = ReadLine(&DE)
+            LD A, 0                           ;
+            ADD A, H                          ;
+            JR NZ, _cont                      ;
+            ADD A, L                          ; note: don't need to load 0 again
+            JR Z, _innerLoopEnd               ;     if (HL == 0) break
+_cont:                                        ;
+            ; _varCurNum += HL                ;
+            LD A, B                           ;
+            LD BC, (_varCurNum)               ;
+            ADD HL, BC                        ;
+            LD (_varCurNum), HL               ;
+            LD HL, (_varCurNum + 2)           ;
+            LD B, 0                           ;
+            LD C, A                           ;
+            ADC HL, BC                        ;
+            LD (_varCurNum + 2), HL           ;     curNum += HL
+            JR _innerLoopStart                ;  }
+_innerLoopEnd:                                ;
+    PUSH DE ; Cmp32 destroys D                ;
+    LD HL, _varCurNum                         ;
+    LD BC, _varMaxNum1                        ;
+    CALL Proc_Cmp32                           ;
+    CP 1                                      ;
+    JR Z, _newMax1                            ;
+                                              ;
+    LD HL, _varCurNum                         ;
+    LD BC, _varMaxNum2                        ;
+    CALL Proc_Cmp32                           ;
+    CP 1                                      ;
+    JR Z, _newMax2                            ;
+                                              ;
+    LD HL, _varCurNum                         ;
+    LD BC, _varMaxNum3                        ;
+    CALL Proc_Cmp32                           ;
+    CP 1                                      ;  
+    JR Z, _newMax3                            ;
+    JR _outerLoopCont                         ;
+                                              ;
+_newMax1:                                     ;   if (curNum > maxNum1) {
+    mov32(_varMaxNum3, _varMaxNum2)           ;     maxNum3 = maxNum2
+    mov32(_varMaxNum2, _varMaxNum1)           ;     maxNum2 = maxNum1
+    mov32(_varMaxNum1, _varCurNum)            ;     maxNum1 = curNum
+    JR _outerLoopCont                         ;   }
+_newMax2:                                     ;   else if (curNum > maxNum2) {
+    mov32(_varMaxNum3, _varMaxNum2)           ;     maxNum3 = maxNum2
+    mov32(_varMaxNum2, _varCurNum)            ;     maxNum2 = curNum
+    JR _outerLoopCont                         ;   }
+_newMax3:                                     ;   else if (curNum > maxNum3) {
+    mov32(_varMaxNum3, _varCurNum)            ;     maxNum3 = curNum
+_outerLoopCont:                               ;   }
+    POP DE                                    ;
+    LD BC, (_varFileEnd)                      ;
+    LD H, D                                   ;
+    LD L, E                                   ;
+    SCF                                       ;
+    CCF                                       ;
+    SBC HL, BC                                ;
+    JR Z, _done                               ;
+    JR NC, _done                              ;   if (DE >= FileEnd) break
+    JP _outerLoopStart                        ; }
+_done:                                        ;
+    LD HL, (_varMaxNum1)                      ;
+    LD BC, (_varMaxNum2)                      ;
+    ADD HL, BC                                ;
+    LD (_varMaxNum1), HL                      ;
+    LD HL, (_varMaxNum1 + 2)                  ;
+    LD BC, (_varMaxNum2 + 2)                  ;
+    ADC HL, BC                                ;
+    LD (_varMaxNum1 + 2), HL                  ; maxNum1 += maxNum2
+                                              ;
+    LD HL, (_varMaxNum1)                      ;
+    LD BC, (_varMaxNum3)                      ;
+    ADD HL, BC                                ;
+    LD (_varMaxNum1), HL                      ;
+    LD HL, (_varMaxNum1 + 2)                  ;
+    LD BC, (_varMaxNum3 + 2)                  ;
+    ADC HL, BC                                ;
+    LD (_varMaxNum1 + 2), HL                  ; maxNum1 += maxNum3
+                                              ;
+    LD HL, _varMaxNum1                        ;
+    CALL Proc_PrintNum                        ; PrintNum(maxNum1)
+    RET                                       ;
+
+; main errors
+_eSymNotFound:
+    LD HL, _constNotFound
+    bcall(_PutS)
+    RET
+_eSymNotInRam:
+    LD HL, _constNotInRam
+    bcall(_PutS)
+    RET
+
+; main variables
+_varMaxNum1:
+    .dw 0, 0
+_varMaxNum2:
+    .dw 0, 0
+_varMaxNum3:
+    .dw 0, 0
+_varCurNum:
+    .dw 0, 0
+_varFileEnd:
+    .dw 0
+
+; main constants
+_constNotFound: .db "Symbol not found", 0
+_constNotInRam: .db "Symbol not in ram (archived)", 0
+_constStr1Tok:
+    .db StrngObj, tVarStrng, tStr1
+    .db 0, 0, 0, 0, 0, 0 ; pad to 9
+
+; Proc: Cmp32
+; Desc: Compares two 32 bit LE numbers
+; Input: HL (addr1), BC (addr2)
+; Output:
+;   * A: 1 if addr1 greater, 0 if equal, -1 if lesser
+; Destroys:
+;   * D
+;   * HL, BC: pointer to most significant bytes where they differ
+Proc_Cmp32:
+    INC HL
+    INC HL
+    INC HL
+    INC BC
+    INC BC
+    INC BC
+
+    LD A, (BC)
+    LD D, (HL)
+    CP D
+    JR NZ, _retUneq
+
+    DEC HL
+    DEC BC
+    LD A, (BC)
+    LD D, (HL)
+    CP D
+    JR NZ, _retUneq
+
+    DEC HL
+    DEC BC
+    LD A, (BC)
+    LD D, (HL)
+    CP D
+    JR NZ, _retUneq
+
+    DEC HL
+    DEC BC
+    LD A, (BC)
+    LD D, (HL)
+    CP D
+    JR NZ, _retUneq
+
+    LD A, 0
+    RET
+_retUneq
+    JR C, _retMore
+_retLess:
+    LD A, -1
+    ret
+_retMore:
+    LD A, 1
+    RET
+
+; Proc: ReadLine
+; Desc: Read a line from the file as an integer
+; Input: DE (file pointer)
+; Output:
+;   * BHL (line value [numeric], 0 if empty line),
+;   * DE (incremented appropriately)
+; Destroys:
+;   * A, C, IXH
+Proc_ReadLine:           ; char *fp (DE)
+    LD B, 0              ; 
+    LD HL, 0             ; res (BHL) = 0
+_loopStart:              ; while ((c = *(fp++)) != '\n') {
+    LD A, (DE)           ;
+    INC DE               ;
+    CP A, '\n'           ;
+    JR Z, _end           ;
+    PUSH DE              ;
+                         ;
+    SUB '0'              ;
+    LD C, A              ;
+    LD A, B
+    ; BHL *= 10          ;
+    ADD HL, HL ; HL *= 2 ;
+    ADC A, A             ;
+    LD D, H              ;
+    LD E, L              ;
+    LD IXH, A            ;
+    ADD HL, HL ; HL *= 2 ;
+    ADC A, A             ;
+    ADD HL, HL ; HL *= 2 ;
+    ADC A, A             ;
+    ADD HL, DE           ;
+    ADC A, A             ;   
+    ADC A, IXH           ;   res *= 10
+
+    LD B, A              ;
+    LD A, C              ;
+                         ;
+    ; HL += A            ;
+    LD D, 0              ;
+    LD E, A              ;
+    ADD HL, DE           ;   res += c - '0'
+    POP DE               ;
+    JR _loopStart        ; }
+_end:                    ;
+    RET                  ;
+
+; Proc: PrintNum
+; Desc: Print out a number in decimal
+; Input: HL (pointer to 32 bit LE value)
+; Output: None
+; Destroys:
+;   * Op1, Op2, AF, BC, DE,  HL, IX
+Proc_PrintNum:
+                          ; Load Op1 (big endian) from LE value
+    LD A, (HL)            ;
+    LD (Op1 + 3), A       ;
+    INC HL                ;
+    LD A, (HL)            ;
+    LD (Op1 + 2), A       ;
+    INC HL                ;
+    LD A, (HL)            ;
+    LD (Op1 + 1), A       ;
+    INC HL                ;
+    LD A, (HL)            ;
+    LD (Op1), A           ; Op1 = *(uint32_t *)HL (with byte swap from LE to BE)
+                          ;
+    LD DE, 10             ;
+    LD HL, _varNum + 9    ; HL = (char *)_varNum + 9
+_loop32:                  ; while(true) {
+        PUSH HL           ;
+        bcall(_Div32By16) ;   Op1, Op2 = divmod(Op1, 10)
+        POP HL            ;
+        LD A, (Op2 + 3)   ;
+        ADD A, '0'        ;
+        LD (HL), A        ;
+        DEC HL            ;   *(HL--) = Op2 + '0'
+        LD A, (Op1)       ;
+        OR A              ;
+        JR NZ, _loop32    ;
+        LD A, (Op1 + 1)   ;
+        OR A              ;
+        JR NZ, _loop32    ;   if (Op1 & 0xffff == Op1) break; // if we can fit in 16 bits
+                          ; }
+    LD D, H               ;
+    LD E, L               ; DE = HL
+    LD HL, (Op1 + 2)      ;
+    LD A, H               ;
+    LD H, L               ;
+    LD L, A               ; HL = Op1 w/ byte swap from BE to LE
+_loop16:                  ; while (HL != 0) {
+        LD A, H           ;
+        OR A              ;
+        JR NZ, _l16_cont  ;
+        LD A, L           ;
+        OR A              ;
+        JR Z, _print      ;
+_l16_cont:                ;
+        bcall(_DivHLBy10) ;   HL, A = divmod(HL, 16)
+        ADD A, '0'        ;
+        LD (DE), A        ;
+        DEC DE            ;   *(DE--) = A + '0'
+        JR _loop16        ; }
+_print:                   ;
+        INC DE            ;
+        LD H, D           ;
+        LD L, E           ;
+        bcall(_PutS)      ; PutS(DE + 1)
+        RET               ; return
+
+; PrintNum Vars
+_varNum:
+    .fill 10 ; maximum base 10 representation of a 32 bit number is 10 digits long
+    .db 0    ; null terminate
