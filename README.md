@@ -6,6 +6,7 @@ Ti83+ Calculator ASM Solutions for [Advent of Code 2022](https://adventofcode.co
 * [`spasm-ng`](https://github.com/alberthdev/spasm-ng)
 * A TI83+ calculator or emulator (e.g., <https://www.cemetech.net/projects/jstified/>)
 * A way of uploading files to the calculator/emulator
+* Python3
 
 ## Files
 * `Makefile` (basic makefile, includes `make` to create `.8xs` files from `.input` files and `.8xp` files from `.z80` files)
