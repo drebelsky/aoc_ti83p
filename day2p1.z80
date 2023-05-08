@@ -1,0 +1,249 @@
+; Note: Need an extra blank line at the end of the file
+#include    "ti83plus.inc"
+#define     progStart   $9D95
+.org        progStart-2
+.db         $BB,$6D
+; Proc: main
+    ; Look up Str1              ;
+    LD HL, _constStr1Tok        ;
+    bcall(_Mov9ToOP1)           ;
+    bcall(_FindSym)             ; DE = findSym(Str1)
+    ; Print errors if not found ;
+    JP C, _eSymNotFound         ;
+    LD A, B                     ;
+    AND A                       ;
+    JP NZ, _eSymNotInRam        ;
+    ; Get size of file          ;
+    LD A, (DE)                  ;
+    INC DE                      ;
+    LD L, A                     ;
+    LD A, (DE)                  ;
+    INC DE                      ;
+    LD H, A                     ; FileSize = *(uint16_t *)DE
+    ADD HL, DE                  ; DE += 2
+    LD (_varFileEnd), HL        ; FileEnd = DE + FileSize
+
+    LD HL, 0                    ; res (HL) = 0
+_mainLoopStart:                 ; do {
+    CALL Proc_HandleLine        ;
+    LD B, 0                     ;
+    LD C, A                     ;
+    ADD HL, BC                  ;     HL += HandleLine(DE)
+    LD B, H                     ;
+    LD C, L                     ;
+                                ;
+    LD A, (_varFileEnd + 1)     ;
+    CP D                        ;
+    JR C, _done                 ;
+    JR NZ, _mainLoopStart       ;
+    LD A, (_varFileEnd)         ;
+    CP E                        ;
+    JR C, _done                 ;
+    JR Z, _done                 ;
+    JR _mainLoopStart           ; } while (DE < FileEnd)
+                                ;
+_done:                          ;
+    LD (_varRes), HL            ;
+    LD HL, _varRes              ;
+    CALL Proc_PrintNum          ;
+    RET                         ;
+
+
+; main errors
+_eSymNotFound:
+    LD HL, _constNotFound
+    bcall(_PutS)
+    RET
+_eSymNotInRam:
+    LD HL, _constNotInRam
+    bcall(_PutS)
+    RET
+
+; main variables
+_varRes:
+    .dw 0, 0
+_varFileEnd:
+    .dw 0
+
+; main constants
+_constNotFound: .db "Symbol not found", 0
+_constNotInRam: .db "Symbol not in ram (archived)", 0
+_constStr1Tok:
+    .db StrngObj, tVarStrng, tStr1
+    .db 0, 0, 0, 0, 0, 0 ; pad to 9
+
+; Proc: HandleLine
+; Desc: Read a line from the file and calculate the score it represents
+; Input: DE (file pointer)
+
+;   * A (line score)
+;   * DE (incremented appropriately)
+; Destroys:
+;   * B, C
+Proc_HandleLine:      ; char *fp (DE)
+    LD A, (DE)        ;
+    SUB A, 'A' - 1    ; A = *(DE++) - 'A' + 1
+    CP A, 1           ;
+    JR Z, _otherOK    ;
+    CP A, 2           ;
+    JR Z, _otherOK    ;
+    CP A, 3           ;
+    JR Z, _otherOK    ;
+    JR _eOtherNotOK   ; if (A != 1 && A != 2 && A != 3) raise OtherNotOK;
+_otherOK:
+    LD B, A           ; B = A
+    INC DE            ;
+    LD A, (DE)        ;
+    CP ' '            ;
+    JR NZ, _eNotSpace ; if (*DE != ' ') raise NotSpaceErr;
+    INC DE            ; DE++
+    LD A, (DE)        ;
+    INC DE            ;
+    SUB A, 'X' - 1    ; A = *(DE++) - 'X' + 1
+    CP A, 1           ;
+    JR Z, _selfOK     ;
+    CP A, 2           ;
+    JR Z, _selfOK     ;
+    CP A, 3           ;
+    JR Z, _selfOK     ;
+    JR _eSelfNotOK    ; if (A != 1 && A != 2 && A != 3) raise SelfNotOK;
+_selfOK:
+    LD C, A           ; C = A
+    LD A, (DE)        ;
+    CP '\n'           ; 
+    JR NZ, _eNotNL    ; if (*DE != '\n') raise NotNLErr;
+    INC DE            ; DE++;
+    
+    LD A, C
+    CP 1
+    JR Z, _rock
+    CP 2
+    JR Z, _paper
+_scissor:
+    LD A, B
+    CP 1
+    JR Z, _lose
+    CP 2
+    JR Z, _win
+    JR  _tie
+_paper:
+    LD A, B
+    CP 1
+    JR Z, _win
+    CP 2
+    JR Z, _tie
+    JR _lose
+_rock:
+    LD A, B
+    CP 1
+    JR Z, _tie
+    CP 2
+    JR Z, _lose
+    ; JR _win ; fall through into win
+_win:
+    LD A, C
+    ADD A, 6
+    RET
+_lose:
+    LD A, C
+    RET
+_tie:
+    LD A, C
+    ADD A, 3
+    RET
+
+_eNotSpace:
+    LD HL, _constNotSpace
+    bcall(_PutS)
+    RET
+_eNotNL:
+    LD HL, _constNotNL
+    bcall(_PutS)
+    RET
+_eOtherNotOK:
+    LD HL, _constOtherNotOK
+    bcall(_PutS)
+    RET
+_eSelfNotOK:
+    LD HL, _constSelfNotOK
+    bcall(_PutS)
+    RET
+
+_constNotSpace:
+    .db "Expected space in input line", 0
+_constNotNL:
+    .db "Expected NL at end of input line", 0
+_constOtherNotOK:
+    .db "Expected A, B, or C at start of line", 0
+_constSelfNotOK:
+    .db "Expected X, Y, or Z at end of line", 0
+
+; Proc: PrintNum
+; Desc: Print out a number in decimal
+; Input: HL (pointer to 32 bit LE value)
+; Output: None
+; Destroys:
+;   * Op1, Op2, AF, BC, DE,  HL, IX
+Proc_PrintNum:
+                          ; Load Op1 (big endian) from LE value
+    LD A, (HL)            ;
+    LD (Op1 + 3), A       ;
+    INC HL                ;
+    LD A, (HL)            ;
+    LD (Op1 + 2), A       ;
+    INC HL                ;
+    LD A, (HL)            ;
+    LD (Op1 + 1), A       ;
+    INC HL                ;
+    LD A, (HL)            ;
+    LD (Op1), A           ; Op1 = *(uint32_t *)HL (with byte swap from LE to BE)
+                          ;
+    LD DE, 10             ;
+    LD HL, _varNum + 9    ; HL = (char *)_varNum + 9
+_loop32:                  ; while(true) {
+        PUSH HL           ;
+        bcall(_Div32By16) ;   Op1, Op2 = divmod(Op1, 10)
+        POP HL            ;
+        LD A, (Op2 + 3)   ;
+        ADD A, '0'        ;
+        LD (HL), A        ;
+        DEC HL            ;   *(HL--) = Op2 + '0'
+        LD A, (Op1)       ;
+        OR A              ;
+        JR NZ, _loop32    ;
+        LD A, (Op1 + 1)   ;
+        OR A              ;
+        JR NZ, _loop32    ;   if (Op1 & 0xffff == Op1) break; // if we can fit in 16 bits
+                          ; }
+    LD D, H               ;
+    LD E, L               ; DE = HL
+    LD HL, (Op1 + 2)      ;
+    LD A, H               ;
+    LD H, L               ;
+    LD L, A               ; HL = Op1 w/ byte swap from BE to LE
+_loop16:                  ; while (HL != 0) {
+        LD A, H           ;
+        OR A              ;
+        JR NZ, _l16_cont  ;
+        LD A, L           ;
+        OR A              ;
+        JR Z, _print      ;
+_l16_cont:                ;
+        bcall(_DivHLBy10) ;   HL, A = divmod(HL, 16)
+        ADD A, '0'        ;
+        LD (DE), A        ;
+        DEC DE            ;   *(DE--) = A + '0'
+        JR _loop16        ; }
+_print:                   ;
+        INC DE            ;
+        LD H, D           ;
+        LD L, E           ;
+        bcall(_PutS)      ; PutS(DE + 1)
+        RET               ; return
+
+; PrintNum Vars
+_varNum:
+    .fill 10 ; maximum base 10 representation of a 32 bit number is 10 digits long
+    .db 0    ; null terminate
+
+.show PROC_HANDLELINE
