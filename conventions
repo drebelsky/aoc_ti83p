@@ -1,0 +1,24 @@
+Function headers:
+; Proc: name
+; Desc: short desc
+; Input: Reg (meaning), mem (meaning)
+; Output:
+;   * Reg (meaning)
+;   * Reg (meaning)
+; Notes:
+
+Labels:
+Var_VariableName : _varVarName
+Proc_ProcedureName
+_labelCased (label internal to procedure)
+main: (main loop)
+ELabel (handle error case) (_eLabel if proc local)
+Const_ConstName (constant) : _constConstName
+
+Function order: (for now, debate wisdom later)
+* Main code
+* Errors
+* Variables
+* Constants
+
+inline comment translate to pseudo-C, line up at last assembly instructions representing equivalent
