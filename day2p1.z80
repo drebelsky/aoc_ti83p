@@ -245,5 +245,3 @@ _print:                   ;
 _varNum:
     .fill 10 ; maximum base 10 representation of a 32 bit number is 10 digits long
     .db 0    ; null terminate
-
-.show PROC_HANDLELINE
