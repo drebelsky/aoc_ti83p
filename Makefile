@@ -8,3 +8,5 @@ clean:
 	python3 make_8xs.py $^ $@
 %.8xp: %.z80
 	spasm $^ $@
+%.z80: %.m4
+	m4 -P $^ > $@
