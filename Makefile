@@ -1,5 +1,6 @@
 .PHONY: default clean
-TARGETS = $(patsubst %.z80,%.8xp,$(wildcard *.z80))
+TARGETS = $(patsubst %.m4,%.8xp,$(wildcard *.m4))
+TARGETS += $(patsubst %.z80,%.8xp,$(wildcard *.z80))
 TARGETS += $(patsubst %.input,%.8xs,$(wildcard *.input))
 default: $(TARGETS)
 clean:
