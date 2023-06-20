@@ -1,0 +1,134 @@
+#include    "ti83plus.inc"
+#define     progStart   $9D95
+.org        progStart-2
+.db         $BB,$6D
+; Proc: main
+    ; Look up Str1              ;
+    LD HL, _constStr1Tok        ;
+    bcall(_Mov9ToOP1)           ;
+    bcall(_FindSym)             ; DE = findSym(Str1)
+    ; Print errors if not found ;
+    JP C, _eSymNotFound         ;
+    LD A, B                     ;
+    AND A                       ;
+    JP NZ, _eSymNotInRam        ;
+    ; Get size of file          ;
+    LD A, (DE)                  ;
+    INC DE                      ;
+    LD L, A                     ;
+    LD A, (DE)                  ;
+    INC DE                      ;
+    LD H, A                     ; FileSize = *(uint16_t *)DE
+    ADD HL, DE                  ; DE += 2
+    LD (_varFileEnd), HL        ; FileEnd = DE + FileSize
+
+    LD H, D
+    LD L, E
+
+    ; IX = res
+    LD IX, 4
+    ; B, C, D, E = four things
+    LD B, (HL)
+    INC HL
+    LD C, (HL)
+    INC HL
+    LD D, (HL)
+    INC HL
+    LD E, (HL)
+    INC HL
+    ; Note, we assume that 5 is the minimum answer
+_loop:
+    LD B, (HL)
+    INC HL
+    INC IX
+    CALL Proc_Cmp
+    AND A
+    JR Z, _done
+
+    LD C, (HL)
+    INC HL
+    INC IX
+    CALL Proc_Cmp
+    AND A
+    JR Z, _done
+
+    LD D, (HL)
+    INC HL
+    INC IX
+    CALL Proc_Cmp
+    AND A
+    JR Z, _done
+
+    LD E, (HL)
+    INC HL
+    INC IX
+    CALL Proc_Cmp
+    AND A
+    JR NZ, _loop
+
+_done:
+    LD HL, _varRes
+    LD B, IXH
+    LD C, IXL
+    LD (HL), C
+    INC HL
+    LD (HL), B
+    DEC HL
+    call Proc_PrintNum
+    RET
+
+; main errors
+_eSymNotFound:
+    LD HL, _constNotFound
+    bcall(_PutS)
+    RET
+_eSymNotInRam:
+    LD HL, _constNotInRam
+    bcall(_PutS)
+    RET
+
+; main variables
+_varFileEnd:
+    .dw 0
+_varRes:
+    .fill 4
+; main constants
+_constNotFound: .db "Symbol not found", 0
+_constNotInRam: .db "Symbol not in ram (archived)", 0
+_constStr1Tok:
+    .db StrngObj, tVarStrng, tStr1
+    .db 0, 0, 0, 0, 0, 0 ; pad to 9
+
+; Proc: Cmp
+; Desc: Compare B, C, D, E to see whether any are the same
+; Input: DE (file pointer)
+; Output:
+;   * A (0 if all different, 1 if any are the same)
+; Destroys:
+;   * none
+Proc_Cmp:
+    LD A, B
+    CP C
+    JR Z, _ret1
+    CP D
+    JR Z, _ret1
+    CP E
+    JR Z, _ret1
+
+    LD A, C
+    CP D
+    JR Z, _ret1
+    CP E
+    JR Z, _ret1
+
+    LD A, D
+    CP E
+    JR Z, _ret1
+_ret0:
+    LD A, 0
+    RET
+_ret1:
+    LD A, 1
+    RET
+
+#include "common/printnum.inc"
