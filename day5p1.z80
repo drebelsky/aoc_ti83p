@@ -1,0 +1,435 @@
+#include    "ti83plus.inc"
+#define     progStart   $9D95
+.org        progStart-2
+.db         $BB,$6D
+#define STACK_SIZE 100
+; Proc: main
+    ; Look up Str1              ;
+    LD HL, _constStr1Tok        ;
+    bcall(_Mov9ToOP1)           ;
+    bcall(_FindSym)             ; DE = findSym(Str1)
+    ; Print errors if not found ;
+    JP C, _eSymNotFound         ;
+    LD A, B                     ;
+    AND A                       ;
+    JP NZ, _eSymNotInRam        ;
+    ; Get size of file          ;
+    LD A, (DE)                  ;
+    INC DE                      ;
+    LD L, A                     ;
+    LD A, (DE)                  ;
+    INC DE                      ;
+    LD H, A                     ; FileSize = *(uint16_t *)DE
+    ADD HL, DE                  ; DE += 2
+    LD (_varFileEnd), HL        ; FileEnd = DE + FileSize
+    
+_mainReadStack:                 ; while (ReadStackLine(de)) {
+    CALL Proc_ReadStackLine     ;   ;
+    OR A                        ; (note that OR A is a more efficient CP 0)
+    JR NZ, _mainReadStack       ; }
+    ; Flip stacks
+    LD IX, Var_Stack0Size
+    CALL Proc_FlipStack
+    LD IX, Var_Stack1Size
+    CALL Proc_FlipStack
+    LD IX, Var_Stack2Size
+    CALL Proc_FlipStack
+    LD IX, Var_Stack3Size
+    CALL Proc_FlipStack
+    LD IX, Var_Stack4Size
+    CALL Proc_FlipStack
+    LD IX, Var_Stack5Size
+    CALL Proc_FlipStack
+    LD IX, Var_Stack6Size
+    CALL Proc_FlipStack
+    LD IX, Var_Stack7Size
+    CALL Proc_FlipStack
+    LD IX, Var_Stack8Size
+    CALL Proc_FlipStack
+
+_mainSkipToInstructions:           ;
+    INC DE                         ;
+    LD A, (DE)                     ;
+    CP 'm'                         ;
+    JR NZ, _mainSkipToInstructions ; while (*(DE++) != 'm') ; 
+
+_mainReadInstructions
+    call Proc_HandleInstruction ;
+    LD A, (_varFileEnd + 1)     ;
+    CP D                        ;
+    JR C, _done                 ;
+    JR NZ, _mainReadInstructions;
+    LD A, (_varFileEnd)         ;
+    CP E                        ;
+    JR C, _done                 ;
+    JR Z, _done                 ;
+    JR _mainReadInstructions    ;
+
+_done:
+    LD DE, _varRes
+    LD HL, Var_Stack0Size
+    call Proc_PeekTop
+    LD HL, Var_Stack1Size
+    call Proc_PeekTop
+    LD HL, Var_Stack2Size
+    call Proc_PeekTop
+    LD HL, Var_Stack3Size
+    call Proc_PeekTop
+    LD HL, Var_Stack4Size
+    call Proc_PeekTop
+    LD HL, Var_Stack5Size
+    call Proc_PeekTop
+    LD HL, Var_Stack6Size
+    call Proc_PeekTop
+    LD HL, Var_Stack7Size
+    call Proc_PeekTop
+    LD HL, Var_Stack8Size
+    call Proc_PeekTop
+    LD HL, _varRes
+    bcall(_PutS)
+    RET
+
+; main variables
+_varRes:
+    .fill 10
+
+; global variables (stacks)
+Var_Stack0Size:  .db 0
+Var_Stack0:      .fill STACK_SIZE - 1
+Var_Stack1Size:  .db 0
+Var_Stack1:      .fill STACK_SIZE - 1
+Var_Stack2Size:  .db 0
+Var_Stack2:      .fill STACK_SIZE - 1
+Var_Stack3Size:  .db 0
+Var_Stack3:      .fill STACK_SIZE - 1
+Var_Stack4Size:  .db 0
+Var_Stack4:      .fill STACK_SIZE - 1
+Var_Stack5Size:  .db 0
+Var_Stack5:      .fill STACK_SIZE - 1
+Var_Stack6Size:  .db 0
+Var_Stack6:      .fill STACK_SIZE - 1
+Var_Stack7Size:  .db 0
+Var_Stack7:      .fill STACK_SIZE - 1
+Var_Stack8Size:  .db 0
+Var_Stack8:      .fill STACK_SIZE - 1
+; global constants
+Const_StackTable:
+.dw Var_Stack0Size
+.dw Var_Stack1Size
+.dw Var_Stack2Size
+.dw Var_Stack3Size
+.dw Var_Stack4Size
+.dw Var_Stack5Size
+.dw Var_Stack6Size
+.dw Var_Stack7Size
+.dw Var_Stack8Size
+ 
+
+; main errors
+_eSymNotFound:
+    LD HL, _constNotFound
+    bcall(_PutS)
+    RET
+_eSymNotInRam:
+    LD HL, _constNotInRam
+    bcall(_PutS)
+    RET
+
+; main variables
+_varFileEnd:
+    .dw 0
+; main constants
+_constNotFound: .db "Symbol not found", 0
+_constNotInRam: .db "Symbol not in ram (archived)", 0
+_constStr1Tok:
+    .db StrngObj, tVarStrng, tStr1
+    .db 0, 0, 0, 0, 0, 0 ; pad to 9
+
+; Proc: ReadStackLine
+; Desc: Read a line from the beginning of the file that contains stack items
+; Input: DE (file pointer)
+; Output:
+;   * A (1 if still in stack portion of file, 0 if in next section)
+;   * DE (incremented appropriately)
+;   * Var_StackSizes and Var_Stack both updated as appropriate
+; Destroys:
+;   * IX
+;   * BC
+Proc_ReadStackLine:        ; char *fp (DE)
+    LD IX, Var_Stack0Size  ; Stack* stack
+_loop:
+    INC DE                 ; DE++;
+    LD A, (DE)             ; char cur = *DE;
+    INC DE                 ;
+    INC DE                 ; DE += 2;
+    CP '1'                 ;
+    JR Z, _ret0            ; if (cur == '1') return 0;
+    CP ' '                 ; if (cur != ' ') {
+    JR Z, _cont            ;
+    LD B, A                ;
+    LD A, (IX)             ;    stack->size++;
+    INC A                  ;
+    LD (IX), A             ;    
+    LD (_storeChar + 2), A ;    (overwrite machine code to do array indexing)
+_storeChar:                ;
+    LD (IX + 0), B         ;    stack->vals[stack->size - 1] = cur;
+                           ; }
+_cont:                     ;
+    LD A, (DE)
+    INC DE
+    CP '\n'
+    LD BC, STACK_SIZE
+    ADD IX, BC
+    JR NZ, _loop
+    LD A, 1
+    RET
+_ret0:
+    LD A, 0
+    RET
+
+; Proc: FlipStack
+; Desc: Flip the stack pointed to by IX
+; Input: IX (beginning of stack [stack size])
+; Output: Memory at IX fixed up
+; Destroys:
+;   * A
+;   * B
+;   * H
+;   * L
+Proc_FlipStack:
+    LD A, (IX)
+    LD B, 1
+_flipLoop:
+    CP B
+    RET Z
+    RET C
+    LD (_load2 + 2), A
+    LD (_load4 + 2), A
+    LD H, A
+    LD A, B
+    LD (_load1 + 2), A
+    LD (_load3 + 2), A
+    LD A, H
+_load1:
+    LD H, (IX + 1)
+_load2:
+    LD L, (IX + STACK_SIZE)
+_load3:
+    LD (IX + 1), L
+_load4:
+    LD (IX + STACK_SIZE), H
+    DEC A
+    INC B
+    JR _flipLoop
+    RET
+
+; Proc: HandleInstruction
+; Desc: Read a line from the instruction section of the file and update the stacks as appropriate
+; Input: DE (file pointer)
+; Output:
+;   * DE incremented to be at next line
+;   * Var_StackSizes and Var_Stack both updated as appropriate
+; Destroys:
+;   * BC
+;   * A
+;   * HL
+Proc_HandleInstruction:        ; char *fp (DE)
+    CALL Proc_ReadNum
+    LD H, A
+    CALL Proc_ReadNum
+    LD L, A
+    DEC L
+    CALL Proc_ReadNum
+    DEC A
+    PUSH DE
+    ; move H from L to A
+    LD D, H
+    LD E, L
+    ; move D from E to A
+
+    LD BC, Const_StackTable
+    LD H, 0
+    LD L, A
+    ADD HL, HL
+    ADD HL, BC
+    LD C, (HL)
+    INC HL
+    LD H, (HL)
+    LD L, C
+    LD B, A
+    LD C, (HL)
+    LD A, (HL)
+    ADD A, D
+    LD (HL), A
+    LD A, B
+    LD B, 0
+    ADD HL, BC
+    PUSH HL
+
+    LD BC, Const_StackTable
+    LD H, 0
+    LD L, E
+    ADD HL, HL
+    ADD HL, BC
+    LD C, (HL)
+    INC HL
+    LD H, (HL)
+    LD L, C
+    LD B, 0
+    LD C, (HL)
+    LD A, (HL)
+    SUB A, D
+    LD (HL), A
+    ADD HL, BC
+
+    LD B, 0    ; HL = addr of first source location
+    LD C, D    ; [B]C = number of elements to move (assume >= 1)
+    POP DE     ; DE = addr of first dest location
+    INC DE
+
+_handleInstLoop:
+    LDI
+    DEC HL
+    DEC HL
+    JP PE, _handleInstLoop
+    POP DE
+    RET
+
+; Proc: ReadNum
+; Desc: Read a number from the file
+; Input: DE (file pointer)
+; Output:
+;   * DE incremented to be past the read number
+;   * A
+; Destroys:
+;   * B, C
+Proc_ReadNum:
+    LD A, (DE)
+    INC DE
+    CALL Proc_IsNumeric
+    DEC B
+    JR Z, _haveNumFirst
+    JR Proc_ReadNum
+_haveNumFirst:
+    SUB A, '0'
+_haveNum:
+    LD C, A
+    LD A, (DE)
+    CALL Proc_IsNumeric
+    DEC B
+    JR NZ, _readNumdone
+    SUB '0'
+    LD B, A
+    LD A, C
+    ADD A, A
+    LD C, A
+    ADD A, A
+    ADD A, A
+    ADD A, C
+    ADD A, B
+    INC DE
+    JR _haveNum
+_readNumDone:
+    LD A, C
+    RET
+
+; Proc: IsNumeric
+; Desc: Return whether number is a numeric char (between '0' and '9')
+; Input: A
+; Output:
+;   * B: 1 if A is numeric, 0 otherwise
+Proc_IsNumeric:
+    LD B, 0
+    CP A, '0'
+    RET C
+    CP A, '9' + 1
+    JR C, _ret1
+    RET
+_ret1:
+    LD B, 1
+    RET
+
+; Proc: PrintNum
+; Desc: Print out a number in decimal
+; Input: HL (pointer to 32 bit LE value)
+; Output: None
+; Destroys:
+;   * Op1, Op2, AF, BC, DE,  HL, IX
+Proc_PrintNum:
+                          ; Load Op1 (big endian) from LE value
+    LD A, (HL)            ;
+    LD (Op1 + 3), A       ;
+    INC HL                ;
+    LD A, (HL)            ;
+    LD (Op1 + 2), A       ;
+    INC HL                ;
+    LD A, (HL)            ;
+    LD (Op1 + 1), A       ;
+    INC HL                ;
+    LD A, (HL)            ;
+    LD (Op1), A           ; Op1 = *(uint32_t *)HL (with byte swap from LE to BE)
+                          ;
+    LD DE, 10             ;
+    LD HL, _varNum + 9    ; HL = (char *)_varNum + 9
+_loop32:                  ; while(true) {
+        PUSH HL           ;
+        bcall(_Div32By16) ;   Op1, Op2 = divmod(Op1, 10)
+        POP HL            ;
+        LD A, (Op2 + 3)   ;
+        ADD A, '0'        ;
+        LD (HL), A        ;
+        DEC HL            ;   *(HL--) = Op2 + '0'
+        LD A, (Op1)       ;
+        OR A              ;
+        JR NZ, _loop32    ;
+        LD A, (Op1 + 1)   ;
+        OR A              ;
+        JR NZ, _loop32    ;   if (Op1 & 0xffff == Op1) break; // if we can fit in 16 bits
+                          ; }
+    LD D, H               ;
+    LD E, L               ; DE = HL
+    LD HL, (Op1 + 2)      ;
+    LD A, H               ;
+    LD H, L               ;
+    LD L, A               ; HL = Op1 w/ byte swap from BE to LE
+_loop16:                  ; while (HL != 0) {
+        LD A, H           ;
+        OR A              ;
+        JR NZ, _l16_cont  ;
+        LD A, L           ;
+        OR A              ;
+        JR Z, _print      ;
+_l16_cont:                ;
+        bcall(_DivHLBy10) ;   HL, A = divmod(HL, 16)
+        ADD A, '0'        ;
+        LD (DE), A        ;
+        DEC DE            ;   *(DE--) = A + '0'
+        JR _loop16        ; }
+_print:                   ;
+        INC DE            ;
+        LD H, D           ;
+        LD L, E           ;
+        bcall(_PutS)      ; PutS(DE + 1)
+        RET               ; return
+
+; PrintNum Vars
+_varNum:
+    .fill 10 ; maximum base 10 representation of a 32 bit number is 10 digits long
+    .db 0    ; null terminate
+
+; Proc: PeekTop
+; Desc: Peek the top element of the stack pointed to by HL and store it in DE
+; Input: HL (stack), DE (dest)
+; Output:
+;   * DE incremented by 1
+;   * *DE storing the top of HL's stack
+; Destroys:
+;   * A, B, C
+Proc_PeekTop:
+    LD B, 0
+    LD C, (HL)
+    ADD HL, BC
+    LD A, (HL)
+    LD (DE), A
+    INC DE
+    RET
