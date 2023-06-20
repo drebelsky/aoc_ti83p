@@ -1,0 +1,157 @@
+#include    "ti83plus.inc"
+#define     progStart   $9D95
+.org        progStart-2
+.db         $BB,$6D
+; Proc: main
+    ; Look up Str1              ;
+    LD HL, _constStr1Tok        ;
+    bcall(_Mov9ToOP1)           ;
+    bcall(_FindSym)             ; DE = findSym(Str1)
+    ; Print errors if not found ;
+    JP C, _eSymNotFound         ;
+    LD A, B                     ;
+    AND A                       ;
+    JP NZ, _eSymNotInRam        ;
+    ; Get size of file          ;
+    LD A, (DE)                  ;
+    INC DE                      ;
+    LD L, A                     ;
+    LD A, (DE)                  ;
+    INC DE                      ;
+    LD H, A                     ; FileSize = *(uint16_t *)DE
+    ADD HL, DE                  ; DE += 2
+    LD (_varFileEnd), HL        ; FileEnd = DE + FileSize
+
+    LD HL, Var_Chars
+    LD B, 14
+_readInitial:
+    LD A, (DE)
+    INC DE
+    SUB A, 'a'
+    LD (HL), A
+    INC HL
+    DJNZ _readInitial
+
+    LD IX, 14 ; IX = res
+    LD C, 0 ; offset to replace in circular buffer
+_loop:
+    LD A, (DE)
+    INC DE
+    SUB A, 'a'
+
+    LD HL, Var_Chars
+    ADD HL, BC
+    LD (HL), A
+
+    INC IX
+    INC C
+    LD A, C
+    CP 14
+    JR NZ, _noResetC
+    LD C, 0
+_noResetC:
+
+    CALL Proc_Have14
+    AND A
+    JR NZ, _loop
+_done:
+    LD HL, _varRes
+    LD B, IXH
+    LD C, IXL
+    LD (HL), C
+    INC HL
+    LD (HL), B
+    DEC HL
+    call Proc_PrintNum
+    RET
+
+; main errors
+_eSymNotFound:
+    LD HL, _constNotFound
+    bcall(_PutS)
+    RET
+_eSymNotInRam:
+    LD HL, _constNotInRam
+    bcall(_PutS)
+    RET
+
+; main variables
+_varFileEnd:
+    .dw 0
+_varRes:
+    .fill 4
+; main constants
+_constNotFound: .db "Symbol not found", 0
+_constNotInRam: .db "Symbol not in ram (archived)", 0
+_constStr1Tok:
+    .db StrngObj, tVarStrng, tStr1
+    .db 0, 0, 0, 0, 0, 0 ; pad to 9
+
+; Global Variables
+Var_Chars:
+    .fill 14
+
+; Proc: Have14
+; Desc: Return whether there are 14 unique characters in Var_Chars
+; Input: Var_Chars
+; Output:
+;   * A (0 if all different, 1 if any are the same)
+; Destroys:
+Proc_Have14:
+    PUSH DE
+    PUSH HL
+    PUSH IX
+    PUSH BC
+    LD B, 26
+    ; First, zero out set
+    LD HL, _varSet
+    LD A, 0
+_zero:
+    LD (HL), A
+    INC HL
+    DJNZ _zero
+
+    ; Now, populate the set
+    LD DE, Var_Chars
+    LD B, 14
+_populate:
+    LD A, (DE)
+    INC DE
+    LD HL, _varSet
+    LD IXH, B
+    LD B, 0
+    LD C, A
+    ADD HL, BC
+    LD B, IXH
+    LD (HL), 1
+    DJNZ _populate
+
+    ; Now, count entries in the set
+    LD B, 26
+    LD A, 0
+    LD HL, _varSet
+_count:
+    LD C, (HL)
+    INC HL
+    DEC C
+    JR NZ, _countNotFound
+    INC A
+_countNotFound:
+    DJNZ _count
+    POP BC
+    POP IX
+    POP HL
+    POP DE
+    CP 14
+    JR Z, _ret0
+    LD A, 1
+    RET
+_ret0:
+    LD A, 0
+
+    RET
+
+_varSet:
+    .fill 26
+
+#include "common/printnum.inc"
