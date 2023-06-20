@@ -1,3 +1,4 @@
+.PRECIOUS: %.z80
 .PHONY: default clean
 TARGETS = $(patsubst %.m4,%.8xp,$(wildcard *.m4))
 TARGETS += $(patsubst %.z80,%.8xp,$(wildcard *.z80))
