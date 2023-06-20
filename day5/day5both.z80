@@ -283,6 +283,18 @@ Proc_HandleInstruction:        ; char *fp (DE)
     LD (HL), A
     ADD HL, BC
 
+#ifdef PART1
+    LD B, 0    ; HL = addr of first source location
+    LD C, D    ; [B]C = number of elements to move (assume >= 1)
+    POP DE     ; DE = addr of first dest location
+    INC DE
+
+_handleInstLoop:
+    LDI
+    DEC HL
+    DEC HL
+    JP PE, _handleInstLoop
+#else
     LD B, 0    ; HL = addr of first source location
     LD C, 1
     ADD HL, BC ; note that we shouldn't overflow here, so carry will be 0
@@ -292,6 +304,7 @@ Proc_HandleInstruction:        ; char *fp (DE)
     INC DE
 
     LDIR
+#endif
     POP DE
     RET
 
@@ -310,7 +323,6 @@ Proc_ReadNum:
     DEC B
     JR Z, _haveNumFirst
     JR Proc_ReadNum
-
 _haveNumFirst:
     SUB A, '0'
 _haveNum:
