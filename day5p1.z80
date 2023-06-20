@@ -240,6 +240,7 @@ Proc_HandleInstruction:        ; char *fp (DE)
     LD L, A
     DEC L
     CALL Proc_ReadNum
+    INC DE ; skip newline
     DEC A
     PUSH DE
     ; move H from L to A
