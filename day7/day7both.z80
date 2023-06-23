@@ -41,6 +41,7 @@ _loop:
     JR _loop
 
 _done:
+#ifdef PART1
     LD IX, Var_Directories
 
     ; loop over directories
@@ -80,6 +81,87 @@ _increment:
     JR NZ, _dirLoop
 
     LD HL, _varRes
+#else
+    LD IX, Var_Directories
+    CALL Proc_MainSub32
+
+    ; loop over directories
+_dirLoop:
+    LD B, (IX + 3)
+    LD A, (_varRes + 3)
+    CP B
+    JR C, _include
+    JR NZ, _increment
+_byte2:
+    LD B, (IX + 2)
+    LD A, (_varRes + 2)
+    CP B
+    JR C, _include
+    JR NZ, _increment
+_byte3:
+    LD B, (IX + 1)
+    LD A, (_varRes + 1)
+    CP B
+    JR C, _include
+    JR NZ, _increment
+_byte4:
+    LD B, (IX + 0)
+    LD A, (_varRes)
+    CP B
+    JR C, _include
+    JR NZ, _increment
+_include:
+    ; Update _varMinValid if we're smaller
+    LD B, (IX + 3)
+    LD A, (_varMinValid + 3)
+    CP B
+    JR Z, _includeByte2
+    JR C, _increment
+    JR _updateMin
+_includeByte2:
+    LD B, (IX + 2)
+    LD A, (_varMinValid + 2)
+    CP B
+    JR Z, _includeByte3
+    JR C, _increment
+    JR _updateMin
+_includeByte3
+    LD B, (IX + 1)
+    LD A, (_varMinValid + 1)
+    CP B
+    JR Z, _includeByte4
+    JR C, _increment
+    JR _updateMin
+_includeByte4
+    LD B, (IX)
+    LD A, (_varMinValid)
+    CP B
+    JR Z, _increment
+    JR C, _increment
+    ; otherwise, update
+_updateMin
+    LD A, (IX + 0)
+    LD (_varMinValid + 0), A
+    LD A, (IX + 1)
+    LD (_varMinValid + 1), A
+    LD A, (IX + 2)
+    LD (_varMinValid + 2), A
+    LD A, (IX + 3)
+    LD (_varMinValid + 3), A
+_increment:
+    LD B, 0
+    LD C, 6
+    ADD IX, BC
+    LD B, IXH
+    LD C, IXL
+    LD HL, (Var_NextDir)
+    ; set carry to 0
+    OR A
+    SBC HL, BC
+    JP NZ, _dirLoop
+
+    LD HL, _varMinValid
+#endif
     CALL Proc_PrintNum
     RET
 
@@ -96,8 +178,15 @@ _eSymNotInRam:
 ; main variables
 _varFileEnd:
     .dw 0
+#ifdef PART1
 _varRes:
     .fill 4
+#else 
+_varRes:
+    .db $00, $5a, $62, $2 ; 40000000
+_varMinValid:
+    .fill 4, $ff
+#endif
 ; main constants
 _constNotFound: .db "Symbol not found", 0
 _constNotInRam: .db "Symbol not in ram (archived)", 0
@@ -324,5 +413,31 @@ Proc_MainAdd32:
     ADC HL, BC
     LD (_varRes + 2), HL
     RET
+
+#ifdef PART2
+; Proc: MainSub32
+; Desc: Subtracts two 32 bit numbers (_varRes = (IX) - _varRes)
+; Input: IX, _varRLNum
+; Output:
+;   * Memory at _varRes becomes the result of subtracting _varRes from IX
+; Destroys:
+;   * BC, HL
+Proc_MainSub32:
+    ; low two bytes
+    LD L, (IX )
+    LD H, (IX + 1)
+    LD BC, (_varRes)
+    OR A ; reset carry flag
+    SBC HL, BC
+    LD (_varRes), HL
+
+    ; high two bytes
+    LD L, (IX + 2)
+    LD H, (IX + 3)
+    LD BC, (_varRes + 2)
+    SBC HL, BC
+    LD (_varRes + 2), HL
+    RET
+#endif
 
 #include "common/printnum.inc"
