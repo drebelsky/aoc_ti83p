@@ -46,7 +46,6 @@ _done:
     ; loop over directories
     ; compare against 100000 == $186a0
 _dirLoop:
-.SHOW _DIRLOOP
     LD A, (IX + 3)
     CP 0
     JR C, _include
@@ -67,7 +66,6 @@ _byte4:
     JR C, _include
     JR NZ, _increment
 _include:
-TMP: .show TMP
     CALL Proc_MainAdd32
 _increment:
     LD B, 0
@@ -98,7 +96,6 @@ _eSymNotInRam:
 ; main variables
 _varFileEnd:
     .dw 0
-.SHOW _VARRES
 _varRes:
     .fill 4
 ; main constants
